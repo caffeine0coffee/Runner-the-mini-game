@@ -2,7 +2,10 @@ package com.mygdx.game;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.Preferences;
 import com.badlogic.gdx.Screen;
+import com.badlogic.gdx.audio.Music;
+import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.Animation;
@@ -23,20 +26,23 @@ public class GameScreen implements Screen {
     private static final int RUNNER_HEIGHT = 32;
     private static final float RUNNER_VELOCITY = 200;
     private static final float RUNNER_JUMP_INIT_SPEED = 10;
-    private static final int RUNNER_INIT_HP = 5;
+    private static final int RUNNER_INIT_HP = 10;
     private static final float GRAVITY_ACCEL = 0.5f;
     private static final int ENEMY_WIDTH = 32;
     private static final int ENEMY_HEIGHT = 32;
     private static final float ENEMY_MIN_VELOCITY = 100;
     private static final float ENEMY_MAX_VELOCITY = 400;
     private static final float ENEMY_INIT_MIN_SPAWN_DURATION = 0.2f;
-    private static final float ENEMY_INIT_MAX_SPAWN_DURATION = 1;
+    private static final float ENEMY_INIT_MAX_SPAWN_DURATION = 3;
     private static final int NUM_OF_RUNNER_FRAMES = 4;
     private static final int NUM_OF_ENEMY_FRAMES = 4;
     private static final int TILE_SIZE = 32;
     private static final int GROUND_Y = TILE_SIZE;
-    private static final int NUM_OF_LEVEL = 3;
-    private static final float GROUND_VELOCITY = 100;
+    private static final int NUM_OF_LEVEL = 9;
+    private static final int SCORE_PER_LEVEL = 30;
+    private static final float GROUND_VELOCITY = 300;
+    private static final int GROUND_CHANGE_LEVEL = 3;
+    private static final int NUM_OF_GROUND_TYPE = 3;
 
     private class Runner {
         private Animation<TextureRegion> animation;
@@ -78,7 +84,7 @@ public class GameScreen implements Screen {
         }
 
         Runner(int x, int y) {
-            animation = generateAnimation("runner.png", RUNNER_WIDTH, RUNNER_HEIGHT, NUM_OF_RUNNER_FRAMES, 0.125f);
+            animation = generateAnimation("spriteSheet/runner.png", RUNNER_WIDTH, RUNNER_HEIGHT, NUM_OF_RUNNER_FRAMES, 0.125f);
             initX = x;
             initY = y;
         }
@@ -94,7 +100,7 @@ public class GameScreen implements Screen {
             remainSafeTime = 0;
             visible = true;
             isSafe = false;
-            hp = RUNNER_INIT_HP;
+            hp = game.isHellMode ? 1 : RUNNER_INIT_HP;
         }
 
         public void runnerControl() {
@@ -109,6 +115,8 @@ public class GameScreen implements Screen {
                 yVelocity = RUNNER_JUMP_INIT_SPEED;
                 isInSky = true;
                 remainJumps -= 1;
+                if (remainJumps == 1) jump1SE.play();
+                else jump2SE.play();
             }
             if (isInSky) {
                 yVelocity -= GRAVITY_ACCEL;
@@ -152,9 +160,9 @@ public class GameScreen implements Screen {
         Ground() {
             tileTextures = new Array<TextureRegion>();
             groundElements = new Queue<GroundElement>();
-            Texture sheet = new Texture(Gdx.files.internal("tiles.png"));
+            Texture sheet = new Texture(Gdx.files.internal("spriteSheet/tiles.png"));
             TextureRegion[][] tmp = TextureRegion.split(sheet, TILE_SIZE, TILE_SIZE*2);
-            for (int i = 0; i < NUM_OF_LEVEL; i++) {
+            for (int i = 0; i < NUM_OF_GROUND_TYPE; i++) {
                 tileTextures.add(tmp[0][i]);
             }
 
@@ -185,8 +193,10 @@ public class GameScreen implements Screen {
             }
 
             if (update) {
+                int groundType = level/GROUND_CHANGE_LEVEL;
+                if (groundType >= NUM_OF_GROUND_TYPE) groundType = NUM_OF_GROUND_TYPE-1;
                 groundElements.removeFirst();
-                groundElements.addLast(new GroundElement(lastX + TILE_SIZE, tileTextures.get(level)));
+                groundElements.addLast(new GroundElement(lastX + TILE_SIZE, tileTextures.get(groundType)));
             }
         }
 
@@ -234,7 +244,7 @@ public class GameScreen implements Screen {
 
         Enemy() {
             elements = new Array<EnemyElement>();
-            animation = generateAnimation("enemy.png", ENEMY_WIDTH, ENEMY_HEIGHT, NUM_OF_ENEMY_FRAMES, 0.25f);
+            animation = generateAnimation("spriteSheet/enemy.png", ENEMY_WIDTH, ENEMY_HEIGHT, NUM_OF_ENEMY_FRAMES, 0.25f);
         }
 
         public void init() {
@@ -295,6 +305,13 @@ public class GameScreen implements Screen {
     int level, prevLevel;
     String stateText, debugText;
     float popUpRemainTime;
+    Sound jump1SE, jump2SE;
+    Sound damagedSE;
+    Sound levelUpSE, missSE;
+    Music bgm;
+    float waitTimeBeforeChangeScreen;
+    boolean isRunnerDied;
+    long highScore;
 
     private void addDebugText(String text) {
         debugText += text + "\n";
@@ -329,11 +346,22 @@ public class GameScreen implements Screen {
         runner = new Runner(0, TILE_SIZE);
         enemy = new Enemy();
         ground = new Ground();
-
         init();
 
-        levelUpPopUpTexture = new Texture(Gdx.files.internal("levelup.png"));
+        Preferences pref = Gdx.app.getPreferences("RunnerPreferences");
+        highScore = pref.getLong("highScore", 0);
+
+        levelUpPopUpTexture = new Texture(Gdx.files.internal("singleImage/levelUp.png"));
         sheetStack.add(levelUpPopUpTexture);
+        jump1SE = Gdx.audio.newSound(Gdx.files.internal("soundEffect/jump1.wav"));
+        jump2SE = Gdx.audio.newSound(Gdx.files.internal("soundEffect/jump2.wav"));
+        damagedSE = Gdx.audio.newSound(Gdx.files.internal("soundEffect/damaged.wav"));
+        levelUpSE = Gdx.audio.newSound(Gdx.files.internal("soundEffect/levelUp.wav"));
+        missSE = Gdx.audio.newSound(Gdx.files.internal("soundEffect/miss.wav"));
+        bgm = Gdx.audio.newMusic(Gdx.files.internal("music/gameScreen.mp3"));
+        bgm.setVolume(0.5f);
+        bgm.setLooping(true);
+        bgm.play();
     }
 
     private void setLevelUpPopUp() {
@@ -351,6 +379,8 @@ public class GameScreen implements Screen {
         runner.init();
         enemy.init();
         ground.init();
+        waitTimeBeforeChangeScreen = 1.5f;
+        isRunnerDied = false;
     }
 
     @Override
@@ -360,26 +390,28 @@ public class GameScreen implements Screen {
 
     @Override
     public void render(float delta) {
+        game.camera.update();
+        game.batch.setProjectionMatrix(game.camera.combined);
         stateTime += delta;
-        score = (long)(stateTime/0.5);
+        if (!isRunnerDied) score = (long)(stateTime/0.5);
         prevLevel = level;
-        if (score > 30) {
-            level = 1;
-        }
-        if (score > 60) {
-            level = 2;
-        }
+
+        level = (int)(score/SCORE_PER_LEVEL);
+        if (game.isHellMode) level = 9999;
         if (level != prevLevel) {
             setLevelUpPopUp();
+            levelUpSE.play();
         }
 
         Gdx.gl20.glClearColor(0.625f, 0.84375f, 0.933594f, 1);
         Gdx.gl20.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-        runner.update(stateTime);
-        runner.runnerControl();
-        enemy.update(stateTime);
-        ground.update(delta);
+        if (!isRunnerDied) {
+            runner.update(stateTime);
+            runner.runnerControl();
+            enemy.update(stateTime);
+            ground.update(delta);
+        }
 
         game.batch.begin();
         runner.draw(game.batch);
@@ -389,7 +421,7 @@ public class GameScreen implements Screen {
         stateText += "SCORE: " + score + "\n";
         stateText += "HP: " + runner.hp + "\n";
         game.bitmapFont.draw(game.batch, stateText, 10, game.WORLD_HEIGHT - 10);
-        game.bitmapFont.draw(game.batch, debugText, 10, game.WORLD_HEIGHT - 50);
+        game.bitmapFont.draw(game.batch, debugText, game.WORLD_WIDTH/2, game.WORLD_HEIGHT - 10);
 
         //update pop-up
         if (popUpRemainTime > 0) {
@@ -401,18 +433,26 @@ public class GameScreen implements Screen {
         game.batch.end();
 
         //Collision process of runner and enemy
-        if (!runner.isSafe) {
+        if (!runner.isSafe && !isRunnerDied) {
             for (Enemy.EnemyElement e : enemy.elements) {
                 if (e.rect.overlaps(runner.rect)) {
                     runner.addHP(-1);
                     runner.setSafeTime(3);
-                    //TODO: play SE
+                    damagedSE.play();
                 }
             }
         }
 
-        if (runner.hp <= 0) {
-            game.setScreen(new GameOverScreen(game, this));
+        if (runner.hp <= 0 && !isRunnerDied) {
+            bgm.stop();
+            missSE.play();
+            isRunnerDied = true;
+        }
+        if (isRunnerDied) {
+            waitTimeBeforeChangeScreen -= delta;
+            if (waitTimeBeforeChangeScreen <= 0) {
+                game.setScreen(new GameOverScreen(game, this));
+            }
         }
 
         debugText = "";
@@ -444,6 +484,12 @@ public class GameScreen implements Screen {
         runner.dispose();
         ground.dispose();
         enemy.dispose();
+        jump1SE.dispose();
+        jump2SE.dispose();
+        damagedSE.dispose();
+        levelUpSE.dispose();
+        missSE.dispose();
+        bgm.dispose();
 
         for (Texture t : sheetStack) {
             t.dispose();

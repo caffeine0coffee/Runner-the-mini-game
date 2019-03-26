@@ -16,16 +16,23 @@ public class RunnerGame extends Game {
 	OrthographicCamera camera;
 	FitViewport viewport;
 
+	boolean isHellMode;
+
+	public void enableHellMode() {
+		isHellMode = true;
+	}
+
 	@Override
 	public void create () {
-		StartMenuScreen startMenuScreen = new StartMenuScreen(this);
-
 		batch = new SpriteBatch();
 		bitmapFont = new BitmapFont();
 		camera = new OrthographicCamera(WORLD_WIDTH, WORLD_HEIGHT);
 		viewport = new FitViewport(WORLD_WIDTH, WORLD_HEIGHT, camera);
 		Gdx.graphics.setWindowedMode(WORLD_WIDTH, WORLD_HEIGHT);
 
+		isHellMode = false;
+
+		StartMenuScreen startMenuScreen = new StartMenuScreen(this);
 		this.setScreen(startMenuScreen);
 	}
 
